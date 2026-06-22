@@ -1,6 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/router';
 
 const ProductCard = ({ id, title, description, price, rating, category, thumbnail }) => {
     // Generate star icons based on rating value
@@ -19,6 +21,28 @@ const ProductCard = ({ id, title, description, price, rating, category, thumbnai
             }
         }
         return stars;
+    };
+
+    const { status } = useSession();
+    const router = useRouter();
+
+    const handleDelete = async () => {
+        if (confirm(`Are you sure you want to delete "${title}"?`)) {
+            try {
+                const res = await fetch(`/api/products/${id}`, {
+                    method: 'DELETE',
+                });
+                if (res.ok) {
+                    // Trigger client-side route refresh to update dynamic ISR state
+                    router.replace(router.asPath);
+                } else {
+                    const data = await res.json();
+                    alert(`Error: ${data.error}`);
+                }
+            } catch (err) {
+                alert(`Error deleting product: ${err.message}`);
+            }
+        }
     };
 
     return (
@@ -69,10 +93,30 @@ const ProductCard = ({ id, title, description, price, rating, category, thumbnai
                         <span className="text-muted small d-block">Price</span>
                         <h4 className="fw-bold text-primary mb-0">${price.toFixed(2)}</h4>
                     </div>
-                    <div>
+                    <div className="d-flex align-items-center gap-2">
                         <Link href={`/products/${id}`} className="btn btn-outline-primary btn-sm px-3 rounded-pill">
                             Details <i className="bi bi-arrow-right ms-1"></i>
                         </Link>
+                        {status === 'authenticated' && (
+                            <>
+                                <Link 
+                                    href={`/products/${id}/edit`} 
+                                    className="btn btn-outline-secondary btn-sm p-1 rounded-circle d-flex align-items-center justify-content-center" 
+                                    style={{ width: '28px', height: '28px' }} 
+                                    title="Edit Product"
+                                >
+                                    <i className="bi bi-pencil-fill" style={{ fontSize: '12px' }}></i>
+                                </Link>
+                                <button 
+                                    onClick={handleDelete} 
+                                    className="btn btn-outline-danger btn-sm p-1 rounded-circle d-flex align-items-center justify-content-center" 
+                                    style={{ width: '28px', height: '28px' }} 
+                                    title="Delete Product"
+                                >
+                                    <i className="bi bi-trash-fill" style={{ fontSize: '12px' }}></i>
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

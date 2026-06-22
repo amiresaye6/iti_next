@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import Head from 'next/head';
 import Image from 'next/image';
 import ProductCard from '@/components/ProductCard';
+import dbConnect from '@/lib/dbConnect';
+import Product from '@/models/Product';
 
-const Index = ({ featuredProducts = [] }) => {
+const Index = ({ featuredProducts = [], randomQuote }) => {
+  const [showToast, setShowToast] = useState(true);
+
   const scrollLeft = () => {
     const lane = document.getElementById('featured-lane');
     if (lane) lane.scrollBy({ left: -320, behavior: 'smooth' });
@@ -18,11 +22,39 @@ const Index = ({ featuredProducts = [] }) => {
   return (
     <>
       <Head>
-        <title>3M 3abdo | Trendy Products & Modern Aesthetics</title>
-        <meta name="description" content="Discover the latest collection of premium beauty, electronics, fragrances, and home products at 3M 3abdo. Fast shipping & easy returns." />
+        <title>ShopVibe | Trendy Products & Modern Aesthetics</title>
+        <meta name="description" content="Discover the latest collection of premium beauty, electronics, fragrances, and home products at ShopVibe. Fast shipping & easy returns." />
       </Head>
 
-      <div className="bg-light min-vh-100">
+      <div className="bg-light min-vh-100 position-relative">
+        {/* Random Quote Toast Notification (SSR requirement) */}
+        {showToast && randomQuote && (
+          <div 
+            className="position-fixed bottom-0 end-0 m-4 p-3 toast show bg-white border border-light-subtle shadow-lg rounded-4 animate-fade-in" 
+            style={{ zIndex: 1060, maxWidth: '350px', transition: 'all 0.3s ease' }} 
+            role="alert"
+          >
+            <div className="toast-header border-bottom-0 pb-1 bg-transparent d-flex justify-content-between align-items-center">
+              <strong className="me-auto text-primary d-flex align-items-center gap-2">
+                <i className="bi bi-chat-quote-fill fs-5"></i>
+                <span>Daily Inspiration</span>
+              </strong>
+              <button 
+                type="button" 
+                onClick={() => setShowToast(false)} 
+                className="btn-close" 
+                aria-label="Close"
+              ></button>
+            </div>
+            <div className="toast-body text-secondary pt-1 pb-1 fs-6 lh-sm" style={{ fontStyle: 'italic' }}>
+              "{randomQuote.quote}"
+              <div className="text-end fw-semibold text-dark mt-2 small" style={{ fontStyle: 'normal' }}>
+                — {randomQuote.author}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Hero Section */}
         <section className="bg-white border-bottom py-5">
           <div className="container py-4">
@@ -49,17 +81,16 @@ const Index = ({ featuredProducts = [] }) => {
               </div>
               <div className="col-lg-6 d-none d-lg-block">
                 <div className="position-relative mx-auto rounded-4 overflow-hidden shadow-lg" style={{ height: '400px', maxWidth: '500px' }}>
-                  {/* Premium mock banner image */}
                   <Image 
-                    src="https://cdn.dummyjson.com/product-images/beauty/essence-mascara-lash-princess/thumbnail.webp" 
+                    src={featuredProducts[0]?.thumbnail || 'https://cdn.dummyjson.com/product-images/beauty/essence-mascara-lash-princess/thumbnail.webp'} 
                     alt="Featured Collection" 
                     fill 
                     className="object-fit-contain p-4 bg-light"
                     priority
                   />
                   <div className="position-absolute bottom-0 start-0 w-100 bg-dark bg-opacity-70 text-white p-4 backdrop-blur">
-                    <h5 className="fw-bold mb-1">New Arrivals In Beauty</h5>
-                    <p className="small mb-0 text-white-50">Dermatologist-tested skincare and cosmetic trends.</p>
+                    <h5 className="fw-bold mb-1">New Arrivals In Store</h5>
+                    <p className="small mb-0 text-white-50">Curated from local catalogs for premium quality.</p>
                   </div>
                 </div>
               </div>
@@ -137,8 +168,8 @@ const Index = ({ featuredProducts = [] }) => {
                 className="d-flex overflow-x-auto gap-4 pb-4 px-1 scroll-container"
               >
                 {featuredProducts.map(product => (
-                  <div key={product.id} className="flex-shrink-0" style={{ width: '285px' }}>
-                    <ProductCard {...product} />
+                  <div key={product._id} className="flex-shrink-0" style={{ width: '285px' }}>
+                    <ProductCard {...product} id={product._id} />
                   </div>
                 ))}
               </div>
@@ -169,24 +200,34 @@ const Index = ({ featuredProducts = [] }) => {
 
 export default Index;
 
-// Fetch trending products statically to display in the carousel
-export async function getStaticProps() {
+// Server-Side Rendering (SSR) to fetch featured products and a random quote dynamically
+export async function getServerSideProps() {
+  await dbConnect();
+  
+  let featuredProducts = [];
+  let randomQuote = null;
+  
   try {
-    const res = await fetch("https://dummyjson.com/products?limit=8");
-    const data = await res.json();
-    
-    return {
-      props: {
-        featuredProducts: data.products || [],
-      },
-      revalidate: 3600, // Regenerate page in background every hour
-    };
-  } catch (error) {
-    console.error("Error fetching featured products on landing page:", error);
-    return {
-      props: {
-        featuredProducts: [],
-      },
-    };
+    const productsDoc = await Product.find({}).limit(8).lean();
+    featuredProducts = JSON.parse(JSON.stringify(productsDoc));
+  } catch (e) {
+    console.error("Error fetching landing page featured products:", e);
   }
+  
+  try {
+    // Fetch random quote dynamically
+    const res = await fetch("https://dummyjson.com/quotes/random");
+    if (res.ok) {
+      randomQuote = await res.json();
+    }
+  } catch (e) {
+    console.error("Error fetching random quote in SSR:", e);
+  }
+  
+  return {
+    props: {
+      featuredProducts: featuredProducts || [],
+      randomQuote: randomQuote || null,
+    },
+  };
 }

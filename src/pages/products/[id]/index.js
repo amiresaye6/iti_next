@@ -2,6 +2,8 @@ import React from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import ProductDetails from '@/components/ProductDetails';
+import dbConnect from '@/lib/dbConnect';
+import Product from '@/models/Product';
 
 const Index = ({ product }) => {
     const router = useRouter();
@@ -59,21 +61,23 @@ export async function getStaticPaths() {
 
 export async function getStaticProps(context) {
     const { params } = context;
+    await dbConnect();
     try {
-        const res = await fetch(`https://dummyjson.com/products/${params.id}`);
+        const productDoc = await Product.findById(params.id).lean();
 
-        if (!res.ok) {
+        if (!productDoc) {
             return {
                 notFound: true,
             };
         }
 
-        const product = await res.json();
+        const serializedProduct = JSON.parse(JSON.stringify(productDoc));
 
         return {
             props: {
-                product,
+                product: serializedProduct,
             },
+            revalidate: 10, // Re-generate static page in background every 10 seconds (ISR)
         };
     } catch (error) {
         console.error(`Error in product dynamic getStaticProps (id: ${params.id}):`, error);

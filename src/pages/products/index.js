@@ -1,8 +1,15 @@
 import React, { useState, useDeferredValue, useTransition, useMemo } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
+import { useSession, signIn } from 'next-auth/react';
 import ProductCard from '@/components/ProductCard';
+import dbConnect from '@/lib/dbConnect';
+import Product from '@/models/Product';
 
 const ProductsIndex = ({ products = [] }) => {
+    const { status } = useSession();
+    const hasSession = status === 'authenticated';
+
     const [searchQuery, setSearchQuery] = useState('');
     const deferredSearch = useDeferredValue(searchQuery);
 
@@ -11,6 +18,7 @@ const ProductsIndex = ({ products = [] }) => {
 
     const [sortBy, setSortBy] = useState('default');
 
+    // Get unique categories dynamically
     const categories = useMemo(() => {
         const unique = new Set(products.map(p => p.category));
         return ['all', ...Array.from(unique)];
@@ -22,6 +30,7 @@ const ProductsIndex = ({ products = [] }) => {
         });
     };
 
+    // Filter and sort the complete list
     const processedProducts = useMemo(() => {
         return products
             .filter(product => {
@@ -44,23 +53,55 @@ const ProductsIndex = ({ products = [] }) => {
             });
     }, [products, deferredSearch, categoryFilter, sortBy]);
 
+    // Gating rule: Guest users see only 1 row of products (up to 4)
+    const displayedProducts = hasSession
+        ? processedProducts
+        : processedProducts.slice(0, 4);
+
     const isTransitioning = searchQuery !== deferredSearch || isPending;
 
     return (
         <>
             <Head>
-                <title>All Products | 3M 3abdo Catalog</title>
-                <meta name="description" content="Explore 3M 3abdo's wide selection of products from laptops to groceries. Filter by category, search instantly, and sort by price and rating." />
+                <title>All Products | ShopVibe Catalog</title>
+                <meta name="description" content="Explore ShopVibe's wide selection of products from laptops to groceries. Filter by category, search instantly, and sort by price and rating." />
             </Head>
             <div className="bg-light min-vh-100 py-5">
                 <div className="container">
-                    {/* Heading */}
-                    <div className="text-center mb-5">
-                        <h1 className="fw-bold text-dark">Our Product Collection</h1>
-                        <p className="text-muted col-lg-6 mx-auto">
-                            Browse through premium items fetched statically via SSG and updated instantly on the client.
-                        </p>
-                    </div>
+                    
+                    {/* Header Action Row (Only for signed-in admins) */}
+                    {hasSession && (
+                        <div className="card border-0 shadow-sm p-4 bg-white rounded-4 mb-5 d-flex flex-sm-row justify-content-between align-items-center gap-3">
+                            <div>
+                                <h3 className="fw-bold text-dark mb-0">Management Portal</h3>
+                                <p className="text-muted small mb-0">You have full admin credentials to manage products in the catalog database.</p>
+                            </div>
+                            <Link href="/products/new" className="btn btn-success rounded-pill px-4 py-2 d-inline-flex align-items-center gap-2 shadow-sm">
+                                <i className="bi bi-plus-circle-fill"></i> Add Product
+                            </Link>
+                        </div>
+                    )}
+
+                    {/* Guest Callout Banner (Only for anonymous guests) */}
+                    {!hasSession && (
+                        <div className="card border-0 bg-primary-subtle text-primary p-4 rounded-4 shadow-sm mb-5 border-start border-primary border-4">
+                            <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                                <div>
+                                    <h4 className="fw-bold mb-1">
+                                        <i className="bi bi-gift-fill me-2 text-primary"></i> Unlock Full Catalog Access
+                                    </h4>
+                                    <p className="mb-0 text-dark opacity-75">
+                                        You are currently viewing a limited guest preview. Sign in to view all 30+ products and gain add/edit/delete admin controls!
+                                    </p>
+                                </div>
+                                <div className="flex-shrink-0">
+                                    <button onClick={() => signIn()} className="btn btn-primary rounded-pill px-4 py-2 fw-semibold">
+                                        Sign In Now
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Search & Sort Panel */}
                     <div className="card border-0 shadow-sm p-4 bg-white rounded-4 mb-4">
@@ -126,7 +167,7 @@ const ProductsIndex = ({ products = [] }) => {
                     {/* Results count & status loader */}
                     <div className="d-flex justify-content-between align-items-center mb-4">
                         <h5 className="text-secondary mb-0 fw-medium">
-                            Showing {processedProducts.length} {processedProducts.length === 1 ? 'product' : 'products'}
+                            Showing {displayedProducts.length} of {processedProducts.length} {processedProducts.length === 1 ? 'product' : 'products'}
                         </h5>
                         {isTransitioning && (
                             <div className="d-flex align-items-center text-primary gap-2">
@@ -141,10 +182,10 @@ const ProductsIndex = ({ products = [] }) => {
                         className="row row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4 transition-all"
                         style={{ opacity: isTransitioning ? 0.7 : 1, transition: 'opacity 0.2s ease' }}
                     >
-                        {processedProducts.length > 0 ? (
-                            processedProducts.map(product => (
-                                <div className="col animate-fade-in" key={product.id}>
-                                    <ProductCard {...product} />
+                        {displayedProducts.length > 0 ? (
+                            displayedProducts.map(product => (
+                                <div className="col animate-fade-in" key={product._id}>
+                                    <ProductCard {...product} id={product._id} />
                                 </div>
                             ))
                         ) : (
@@ -163,22 +204,28 @@ const ProductsIndex = ({ products = [] }) => {
 
 export default ProductsIndex;
 
+// Incremental Static Regeneration (ISR) from local MongoDB database
 export async function getStaticProps() {
+    await dbConnect();
     try {
-        const res = await fetch("https://dummyjson.com/products?limit=100");
-        const data = await res.json();
+        const productsDoc = await Product.find({}).sort({ createdAt: -1 }).lean();
+        
+        // Serialize ObjectId and Dates to strings
+        const serializedProducts = JSON.parse(JSON.stringify(productsDoc));
 
         return {
             props: {
-                products: data.products || [],
-            }
+                products: serializedProducts || [],
+            },
+            revalidate: 10, // Re-generate static page in background every 10 seconds (ISR)
         };
     } catch (error) {
-        console.error("Error fetching products inside getStaticProps:", error);
+        console.error("Error in products list getStaticProps:", error);
         return {
             props: {
                 products: [],
             },
+            revalidate: 10,
         };
     }
 }
