@@ -16,10 +16,11 @@ declare global {
   var mongoose: GlobalMongoose | undefined;
 }
 
-let cached = global.mongoose;
+// Explicitly type cached to ensure the compiler knows it cannot be undefined
+const cached: GlobalMongoose = global.mongoose || { conn: null, promise: null };
 
-if (!cached) {
-  cached = global.mongoose = { conn: null, promise: null };
+if (!global.mongoose) {
+  global.mongoose = cached;
 }
 
 async function dbConnect() {
